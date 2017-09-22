@@ -8,7 +8,7 @@ ipconfig getifaddr en0
 Save your IP.
 
 Then start the python sever use the command:
-python3 server3. Pay
+python3 server3.py
 
 To start the client:
 
