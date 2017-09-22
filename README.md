@@ -17,3 +17,4 @@ Please make sure you enter the IP you got from ipconfig before.
 
 The application will display as a result the faces rectangles and emotions
 
+https://github.com/yaelbe/viz/blob/master/Screenshot_20170922-112814.png
