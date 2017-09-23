@@ -24,6 +24,7 @@ import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.text.InputType;
 import android.util.Log;
+import android.util.Patterns;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -64,6 +65,7 @@ public class MainActivity extends AppCompatActivity {
     private String imageUrl = "http://s3.amazonaws.com/viz-test-yael/%s";
     private boolean noEmotions = false;
 
+    private String serverNotConnected = "Server not connected";
     private static String IP_ADDRESS = "ipAddress";
     private final static String AUDIO_RECORDER_FOLDER = "Android" + File.separator + "data";
     private final static String PACKAGE_NAME = App.getAppContext().getPackageName();
@@ -96,6 +98,12 @@ public class MainActivity extends AppCompatActivity {
         SelectImageGallery.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                if(socket == null) {
+                    showServerNotConnected();
+                    return;
+                }else if(!socket.isConnected()){
+                    showAlert("Server not connected /n Check your internet connection");
+                }
 
                 Intent intent = new Intent();
 
@@ -116,13 +124,16 @@ public class MainActivity extends AppCompatActivity {
         UploadImageServer.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                if(socket == null){
+                    showServerNotConnected();
+                    return;
+                }else if(!socket.isConnected()){
+                    showAlert("Server not connected /n Check your internet connection");
+                }
                 if(bitmap != null) {
                     ImageUploadToServerFunction();
                 }else{
-                    AlertDialog.Builder alertBuilder = new AlertDialog.Builder(MainActivity.this);
-                    alertBuilder.setTitle("Ooops");
-                    AlertDialog.Builder builder = alertBuilder.setMessage("You didn't select an image");
-                    builder.show();
+                    showAlert("You didn't select an image");
                 }
             }
         });
@@ -132,7 +143,8 @@ public class MainActivity extends AppCompatActivity {
 
             ActivityCompat.requestPermissions(this, permissions, 123);
         }
-        if(serverIPInput == null || serverIPInput.isEmpty()) {
+
+        if( serverIPInput == null || serverIPInput.isEmpty()) {
             getServerIP();
         }else {
             new Thread(new ClientThread()).start();
@@ -174,7 +186,6 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             protected void onPostExecute(String string1) {
-                progressDialog.setMessage("Processing...");
                 super.onPostExecute(string1);
 
             }
@@ -278,9 +289,28 @@ public class MainActivity extends AppCompatActivity {
         imageView.setImageDrawable(new BitmapDrawable(getResources(), tempBitmap));
     }
 
+    private void showAlert(String message){
+        AlertDialog.Builder alertBuilder = new AlertDialog.Builder(MainActivity.this);
+        alertBuilder.setTitle("Ooops");
+        alertBuilder.setMessage(message);
+        alertBuilder.show();
+    }
+
+    private void showServerNotConnected(){
+        AlertDialog.Builder alertBuilder = new AlertDialog.Builder(MainActivity.this);
+        alertBuilder.setTitle("Ooops");
+        alertBuilder.setMessage(serverNotConnected);
+        alertBuilder.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialogInterface) {
+                getServerIP();
+            }
+        });
+        alertBuilder.show();
+    }
     private void getServerIP(){
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Were is your server ip?");
+        builder.setTitle("What is your server ip address?");
 
         // Set up the input
         final EditText input = new EditText(this);
@@ -293,16 +323,37 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(DialogInterface dialog, int which) {
                 serverIPInput = input.getText().toString();
-                SharedPreferences prefs = MainActivity.this.getSharedPreferences(
-                        "com.viz", Context.MODE_PRIVATE);
-                prefs.edit().putString(SERVER_IP,serverIPInput).commit();
+                if(serverIPInput == null || serverIPInput.isEmpty()) {
+                    getServerIP();
+                }
+                boolean isIP = Patterns.IP_ADDRESS.matcher(serverIPInput).matches();
+                if(!isIP){
+                    AlertDialog.Builder alertBuilder = new AlertDialog.Builder(MainActivity.this);
+                    alertBuilder.setTitle("Ooops");
+                    alertBuilder.setMessage("Not a valid ip address");
+                    alertBuilder.setOnDismissListener(new DialogInterface.OnDismissListener() {
+                        @Override
+                        public void onDismiss(DialogInterface dialogInterface) {
+                            getServerIP();
+                        }
+                    });
+                    alertBuilder.show();
+                }else {
+                    SharedPreferences prefs = MainActivity.this.getSharedPreferences(
+                            "com.viz", Context.MODE_PRIVATE);
+                    prefs.edit().putString(SERVER_IP, serverIPInput).commit();
 
-                new Thread(new ClientThread()).start();
+                    new Thread(new ClientThread()).start();
+                }
             }
         });
         builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
+                if(serverIPInput != null && !serverIPInput.isEmpty()) {
+                    if(Patterns.IP_ADDRESS.matcher(serverIPInput).matches())
+                        new Thread(new ClientThread()).start();
+                }
                 dialog.cancel();
             }
         });
@@ -321,8 +372,9 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onStateChanged(int id, TransferState state) {
             if (state.equals(TransferState.COMPLETED)) {
-
-                imageView.setImageResource(android.R.color.transparent);
+                progressDialog.setTitle("Getting Emotions");
+                progressDialog.setMessage("Processing...");
+//                imageView.setImageResource(android.R.color.transparent);
                 new Thread() {
                     @Override
                     public void run() {
@@ -345,6 +397,7 @@ public class MainActivity extends AppCompatActivity {
                                     Thread.sleep(10);
                                 } catch (InterruptedException ie) {
                                     ie.printStackTrace();
+                                    progressDialog.dismiss();
                                 }
                                 availableBytes = input.available();
                             }
@@ -363,12 +416,17 @@ public class MainActivity extends AppCompatActivity {
                             emotionList = gson.fromJson(reader, type);
 
 
-                            Log.d("socket", "responce " + responce);
+                            Log.d("socket", "response " + responce);
 
                             runOnUiThread(new Runnable() {
 
                                 @Override
                                 public void run() {
+                                    if(emotionList == null){
+                                        progressDialog.dismiss();
+                                        showServerNotConnected();
+                                        return;
+                                    }
                                     if(emotionList.isEmpty())
                                         noEmotions = true;
                                     drawRec();
@@ -377,10 +435,13 @@ public class MainActivity extends AppCompatActivity {
                             });
 
                         } catch (UnknownHostException e) {
+                            progressDialog.dismiss();
                             e.printStackTrace();
                         } catch (IOException e) {
+                            progressDialog.dismiss();
                             e.printStackTrace();
                         } catch (Exception e) {
+                            progressDialog.dismiss();
                             e.printStackTrace();
                         }
                     }
